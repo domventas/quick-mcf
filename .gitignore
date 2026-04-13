@@ -1,0 +1,22 @@
+# Dependencies
+.venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Database
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# uv
+# Keep uv.lock in version control for reproducibility
