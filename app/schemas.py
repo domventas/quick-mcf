@@ -46,6 +46,7 @@ class FulfillmentPreviewRequest(BaseModel):
     marketplace_id: str = ""
 
 
+
 class FulfillmentOrderResponse(BaseModel):
     seller_fulfillment_order_id: str
     amazon_status: str
@@ -65,12 +66,7 @@ class FulfillmentOrderResponse(BaseModel):
 class InventoryItemResponse(BaseModel):
     seller_sku: str
     asin: str
-    fnsku: str
-    product_name: str
     afn_fulfillable_quantity: int
-    afn_reserved_quantity: int
-    afn_unsellable_quantity: int
-    afn_total_quantity: int
     marketplace_id: str
     last_synced_at: datetime | None = None
 
@@ -95,12 +91,12 @@ class OrderStatusResponse(BaseModel):
     seller_fulfillment_order_id: str
     amazon_status: str
     internal_status: str
+    shipment_status: str | None = None
     displayable_order_id: str | None = None
     shipping_speed_category: str | None = None
     order_created_at: datetime | None = None
     status_changed_at: datetime | None = None
     last_polled_at: datetime | None = None
-    quicklly_push_status: str = ""
 
     class Config:
         from_attributes = True
@@ -109,6 +105,7 @@ class OrderStatusResponse(BaseModel):
 class StatusHistoryEntry(BaseModel):
     old_status: str | None
     new_status: str
+    shipment_status: str | None = None
     changed_at: datetime
 
     class Config:
@@ -120,7 +117,6 @@ class OrderPollResponse(BaseModel):
     message: str
     total_polled: int = 0
     changed: int = 0
-    pushed_to_quicklly: int = 0
     failures: int = 0
 
 
@@ -133,7 +129,6 @@ class HealthResponse(BaseModel):
     environment: str
     dry_run: bool
     marketplace_id: str
-    quicklly_enabled: bool
 
 
 class JobStatusResponse(BaseModel):

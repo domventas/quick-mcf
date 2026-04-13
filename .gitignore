@@ -20,3 +20,6 @@ Thumbs.db
 
 # uv
 # Keep uv.lock in version control for reproducibility
+
+# extra
+app/scratch

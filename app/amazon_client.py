@@ -72,15 +72,9 @@ MOCK_FULFILLMENT_ORDERS = [
 ]
 
 MOCK_INVENTORY_REPORT = (
-    "sku\tfnsku\tasin\tproduct-name\tcondition\t"
-    "afn-fulfillable-quantity\tafn-inbound-working-quantity\t"
-    "afn-inbound-shipped-quantity\tafn-inbound-receiving-quantity\t"
-    "afn-reserved-quantity\tafn-unsellable-quantity\t"
-    "afn-researching-quantity\tafn-total-quantity\n"
-    "SKU-001\tFNSKU001\tB000TEST01\tMock Product One\tNewItem\t"
-    "100\t10\t5\t3\t8\t2\t0\t128\n"
-    "SKU-002\tFNSKU002\tB000TEST02\tMock Product Two\tNewItem\t"
-    "50\t0\t0\t0\t5\t1\t0\t56\n"
+    "sku\tasin\tafn-fulfillable-quantity\n"
+    "SKU-001\tB000TEST01\t100\n"
+    "SKU-002\tB000TEST02\t50\n"
 )
 
 

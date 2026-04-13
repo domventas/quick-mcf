@@ -13,32 +13,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.amazon_client import amazon_client
 from app.config import settings
 from app.models import FulfillmentOrderRecord, FulfillmentStatusHistory, SyncState
-from app.services.quicklly import quicklly_client
 
 logger = logging.getLogger(__name__)
 
-FULFILLMENT_STATUS_MAP = {
-    "New": "new",
-    "Received": "received",
-    "Planning": "planning",
-    "Processing": "processing",
-    "Cancelled": "cancelled",
-    "Complete": "completed",
-    "CompletePartialled": "completed_partial",
-    "Unfulfillable": "unfulfillable",
-    "Invalid": "failed",
-}
-
-
-def _map_status(amazon_status: str) -> str:
-    return FULFILLMENT_STATUS_MAP.get(amazon_status, amazon_status.lower())
-
+from app.constants import map_amazon_status
 
 async def poll_fulfillment_orders(db: AsyncSession) -> dict:
     """
     Two-phase polling:
     1) listAllFulfillmentOrders(queryStartDate=checkpoint) — discover
-    2) getFulfillmentOrder(id) — for changed orders only, get details + push to Quicklly
+    2) getFulfillmentOrder(id) — for changed orders only, get details and store in DB
     """
     now = datetime.now(timezone.utc)
 
@@ -61,7 +45,6 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
     logger.info(f"Found {len(orders)} orders updated since checkpoint")
 
     changed_count = 0
-    pushed_count = 0
     failed_count = 0
 
     for order_summary in orders:
@@ -78,11 +61,13 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
         result = await db.execute(stmt)
         existing = result.scalar_one_or_none()
 
-        # Skip if status hasn't changed
+        # Phase 2: Get full details for changed or new orders
+        # Skip if status hasn't changed (Note: user might want to detect shipment status changes too)
         if existing and existing.amazon_status == amazon_status:
+            # We still might want to check if shipment_status changed even if amazon_status didn't
+            # but usually they change together. For now, let's stick to amazon_status as trigger.
             continue
 
-        # Phase 2: Status changed — get full details
         logger.info(f"Status change detected: {order_id} — {existing.amazon_status if existing else 'NEW'} → {amazon_status}")
         changed_count += 1
 
@@ -96,14 +81,21 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
         fulfillment_order = detail.get("fulfillmentOrder", {})
         items = detail.get("fulfillmentOrderItems", [])
         shipments = detail.get("fulfillmentShipments", [])
+        
+        # User requested: extract fulfillmentShipmentStatus
+        shipment_status = None
+        if shipments:
+            # Taking the status of the first shipment as a representative value
+            shipment_status = shipments[0].get("fulfillmentShipmentStatus")
 
-        internal_status = _map_status(amazon_status)
+        internal_status = map_amazon_status(amazon_status)
 
         if existing:
             # Update existing record
             existing.previous_status = existing.amazon_status
             existing.amazon_status = amazon_status
             existing.internal_status = internal_status
+            existing.shipment_status = shipment_status
             existing.displayable_order_id = fulfillment_order.get("displayableOrderId")
             existing.shipping_speed_category = fulfillment_order.get("shippingSpeedCategory")
             existing.destination_address_json = json.dumps(fulfillment_order.get("destinationAddress", {}))
@@ -112,7 +104,6 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
             existing.amazon_last_updated = now
             existing.last_polled_at = now
             existing.status_changed_at = now
-            existing.quicklly_push_status = "pending"
         else:
             # New order discovered
             record = FulfillmentOrderRecord(
@@ -120,6 +111,7 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
                 marketplace_id=settings.SP_API_MARKETPLACE_ID,
                 amazon_status=amazon_status,
                 internal_status=internal_status,
+                shipment_status=shipment_status,
                 displayable_order_id=fulfillment_order.get("displayableOrderId"),
                 shipping_speed_category=fulfillment_order.get("shippingSpeedCategory"),
                 destination_address_json=json.dumps(fulfillment_order.get("destinationAddress", {})),
@@ -129,7 +121,6 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
                 amazon_last_updated=now,
                 last_polled_at=now,
                 status_changed_at=now,
-                quicklly_push_status="pending",
             )
             db.add(record)
             existing = record
@@ -139,27 +130,11 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
             seller_fulfillment_order_id=order_id,
             old_status=existing.previous_status if existing else None,
             new_status=amazon_status,
+            shipment_status=shipment_status,
             changed_at=now,
             full_response_json=json.dumps(detail),
         )
         db.add(history)
-
-        # Phase 3: Push to Quicklly
-        push_result = await quicklly_client.push_status_update({
-            "seller_fulfillment_order_id": order_id,
-            "internal_status": internal_status,
-            "amazon_status": amazon_status,
-            "shipments": shipments,
-            "status_changed_at": now.isoformat(),
-        })
-
-        existing.quicklly_push_status = push_result["status"]
-        if push_result["status"] == "pushed":
-            existing.quicklly_pushed_at = now
-            pushed_count += 1
-        elif push_result["status"] == "failed":
-            existing.quicklly_error = push_result.get("error")
-            failed_count += 1
 
     # Update checkpoint
     if sync_state:
@@ -174,42 +149,10 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
         "message": f"Polled {len(orders)} orders, {changed_count} changed",
         "total_polled": len(orders),
         "changed": changed_count,
-        "pushed_to_quicklly": pushed_count,
         "failures": failed_count,
     }
     logger.info(f"Poll complete: {summary}")
     return summary
-
-
-async def retry_failed_pushes(db: AsyncSession) -> dict:
-    """Retry all orders with quicklly_push_status='failed'."""
-    stmt = select(FulfillmentOrderRecord).where(
-        FulfillmentOrderRecord.quicklly_push_status == "failed"
-    )
-    result = await db.execute(stmt)
-    records = result.scalars().all()
-
-    retried = 0
-    succeeded = 0
-    for record in records:
-        push_result = await quicklly_client.push_status_update({
-            "seller_fulfillment_order_id": record.seller_fulfillment_order_id,
-            "internal_status": record.internal_status,
-            "amazon_status": record.amazon_status,
-            "shipments": json.loads(record.shipments_json) if record.shipments_json else None,
-            "status_changed_at": record.status_changed_at.isoformat() if record.status_changed_at else None,
-        })
-        retried += 1
-        record.quicklly_push_status = push_result["status"]
-        if push_result["status"] == "pushed":
-            record.quicklly_pushed_at = datetime.now(timezone.utc)
-            record.quicklly_error = None
-            succeeded += 1
-        elif push_result["status"] == "failed":
-            record.quicklly_error = push_result.get("error")
-
-    await db.commit()
-    return {"retried": retried, "succeeded": succeeded, "still_failed": retried - succeeded}
 
 
 async def get_order_history(order_id: str, db: AsyncSession) -> list[dict]:
@@ -225,6 +168,7 @@ async def get_order_history(order_id: str, db: AsyncSession) -> list[dict]:
         {
             "old_status": r.old_status,
             "new_status": r.new_status,
+            "shipment_status": r.shipment_status,
             "changed_at": r.changed_at.isoformat() if r.changed_at else None,
         }
         for r in records

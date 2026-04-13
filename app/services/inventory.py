@@ -21,27 +21,15 @@ logger = logging.getLogger(__name__)
 REPORT_TYPE = "GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA"
 
 # Map report TSV columns → our model fields
+# MINIMIZED: Only seller_sku, asin, afn_fulfillable_quantity
 COLUMN_MAP = {
     "sku": "seller_sku",
-    "fnsku": "fnsku",
     "asin": "asin",
-    "product-name": "product_name",
-    "condition": "condition",
     "afn-fulfillable-quantity": "afn_fulfillable_quantity",
-    "afn-inbound-working-quantity": "afn_inbound_working_quantity",
-    "afn-inbound-shipped-quantity": "afn_inbound_shipped_quantity",
-    "afn-inbound-receiving-quantity": "afn_inbound_receiving_quantity",
-    "afn-reserved-quantity": "afn_reserved_quantity",
-    "afn-unsellable-quantity": "afn_unsellable_quantity",
-    "afn-researching-quantity": "afn_researching_quantity",
-    "afn-total-quantity": "afn_total_quantity",
 }
 
 INT_FIELDS = {
-    "afn_fulfillable_quantity", "afn_inbound_working_quantity",
-    "afn_inbound_shipped_quantity", "afn_inbound_receiving_quantity",
-    "afn_reserved_quantity", "afn_unsellable_quantity",
-    "afn_researching_quantity", "afn_total_quantity",
+    "afn_fulfillable_quantity",
 }
 
 
@@ -143,12 +131,7 @@ async def sync_inventory(db: AsyncSession) -> dict:
         InventoryCurrent(
             seller_sku=row["seller_sku"],
             asin=row["asin"],
-            fnsku=row.get("fnsku", ""),
-            product_name=row.get("product_name", ""),
             afn_fulfillable_quantity=row.get("afn_fulfillable_quantity", 0),
-            afn_reserved_quantity=row.get("afn_reserved_quantity", 0),
-            afn_unsellable_quantity=row.get("afn_unsellable_quantity", 0),
-            afn_total_quantity=row.get("afn_total_quantity", 0),
             marketplace_id=marketplace,
             last_snapshot_id=snapshot_id,
             last_synced_at=now,
@@ -200,12 +183,7 @@ async def get_current_inventory(db: AsyncSession, sku: str | None = None) -> lis
         {
             "seller_sku": r.seller_sku,
             "asin": r.asin,
-            "fnsku": r.fnsku,
-            "product_name": r.product_name,
             "afn_fulfillable_quantity": r.afn_fulfillable_quantity,
-            "afn_reserved_quantity": r.afn_reserved_quantity,
-            "afn_unsellable_quantity": r.afn_unsellable_quantity,
-            "afn_total_quantity": r.afn_total_quantity,
             "marketplace_id": r.marketplace_id,
             "last_synced_at": r.last_synced_at.isoformat() if r.last_synced_at else None,
         }

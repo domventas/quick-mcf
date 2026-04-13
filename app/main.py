@@ -10,8 +10,9 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
 from app.config import settings
-from app.database import async_session, init_db
+from app.database import init_db
 from app.routers import fulfillment, inventory, orders
+from app.jobs import run_inventory_sync, run_fulfillment_poll
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -22,32 +23,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Scheduled jobs
-# ---------------------------------------------------------------------------
-
-async def _run_inventory_sync():
-    """Wrapper to run inventory sync as a scheduled job."""
-    from app.services.inventory import sync_inventory
-    async with async_session() as db:
-        try:
-            result = await sync_inventory(db)
-            logger.info(f"Scheduled inventory sync: {result.get('message', '')}")
-        except Exception as e:
-            logger.error(f"Scheduled inventory sync failed: {e}", exc_info=True)
-
-
-async def _run_fulfillment_poll():
-    """Wrapper to run fulfillment order poll as a scheduled job."""
-    from app.services.order_status import poll_fulfillment_orders
-    async with async_session() as db:
-        try:
-            result = await poll_fulfillment_orders(db)
-            logger.info(f"Scheduled fulfillment poll: {result.get('message', '')}")
-        except Exception as e:
-            logger.error(f"Scheduled fulfillment poll failed: {e}", exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +37,6 @@ async def lifespan(app: FastAPI):
     logger.info(f"  Environment:  {settings.ENVIRONMENT}")
     logger.info(f"  DRY_RUN:      {settings.DRY_RUN}")
     logger.info(f"  Marketplace:  {settings.SP_API_MARKETPLACE_ID}")
-    logger.info(f"  Quicklly:     {'ENABLED' if settings.QUICKLLY_PUSH_ENABLED else 'DISABLED'}")
     logger.info("=" * 60)
 
     if settings.ENVIRONMENT == "production" and not settings.DRY_RUN:
@@ -75,13 +49,13 @@ async def lifespan(app: FastAPI):
     # Start scheduler
     scheduler = AsyncIOScheduler()
     scheduler.add_job(
-        _run_inventory_sync,
+        run_inventory_sync,
         trigger=IntervalTrigger(hours=settings.INVENTORY_SYNC_INTERVAL_HOURS),
         id="inventory_sync",
         name=f"Inventory Sync (every {settings.INVENTORY_SYNC_INTERVAL_HOURS}h)",
     )
     scheduler.add_job(
-        _run_fulfillment_poll,
+        run_fulfillment_poll,
         trigger=IntervalTrigger(minutes=settings.ORDER_POLL_INTERVAL_MINUTES),
         id="fulfillment_poll",
         name=f"Fulfillment Poll (every {settings.ORDER_POLL_INTERVAL_MINUTES}min)",
@@ -124,7 +98,6 @@ async def health():
         "environment": settings.ENVIRONMENT,
         "dry_run": settings.DRY_RUN,
         "marketplace_id": settings.SP_API_MARKETPLACE_ID,
-        "quicklly_enabled": settings.QUICKLLY_PUSH_ENABLED,
     }
 
 

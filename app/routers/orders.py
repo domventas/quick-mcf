@@ -40,8 +40,4 @@ async def get_order_history(order_id: str, db: AsyncSession = Depends(get_db)):
     return await order_status_service.get_order_history(order_id, db)
 
 
-@router.post("/retry-failed-pushes")
-async def retry_failed_pushes(db: AsyncSession = Depends(get_db)):
-    """Retry all failed Quicklly pushes."""
-    result = await order_status_service.retry_failed_pushes(db)
-    return result
+

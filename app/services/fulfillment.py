@@ -7,6 +7,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,26 +18,14 @@ from app.schemas import CreateFulfillmentRequest, FulfillmentPreviewRequest
 
 logger = logging.getLogger(__name__)
 
-# Status mapping
-FULFILLMENT_STATUS_MAP = {
-    "New": "new",
-    "Received": "received",
-    "Planning": "planning",
-    "Processing": "processing",
-    "Cancelled": "cancelled",
-    "Complete": "completed",
-    "CompletePartialled": "completed_partial",
-    "Unfulfillable": "unfulfillable",
-    "Invalid": "failed",
-}
-
-
-def _map_status(amazon_status: str) -> str:
-    return FULFILLMENT_STATUS_MAP.get(amazon_status, amazon_status.lower())
+from app.constants import map_amazon_status
 
 
 async def preview_fulfillment(request: FulfillmentPreviewRequest) -> dict:
     """Get fulfillment preview — no commitment, just validation + estimates."""
+    if not request.items:
+        raise HTTPException(status_code=400, detail="At least one item is required for fulfillment preview.")
+
     marketplace = request.marketplace_id or settings.SP_API_MARKETPLACE_ID
 
     body = {
@@ -63,12 +52,19 @@ async def preview_fulfillment(request: FulfillmentPreviewRequest) -> dict:
         "shippingSpeedCategories": request.shipping_speed_categories,
     }
 
-    result = amazon_client.get_fulfillment_preview(body)
-    return result
+    try:
+        result = amazon_client.get_fulfillment_preview(body)
+        return result
+    except Exception as e:
+        logger.error(f"Amazon Preview Error: {e}")
+        raise HTTPException(status_code=400, detail=f"Amazon fulfillment preview failed: {str(e)}")
 
 
 async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncSession) -> dict:
     """Create an MCF fulfillment order."""
+    if not request.items:
+        raise HTTPException(status_code=400, detail="At least one item is required to create a fulfillment order.")
+
     order_id = request.seller_fulfillment_order_id or f"MCF-{uuid.uuid4().hex[:12].upper()}"
     marketplace = request.marketplace_id or settings.SP_API_MARKETPLACE_ID
     now = datetime.now(timezone.utc)
@@ -117,7 +113,6 @@ async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncS
             order_created_at=now,
             last_polled_at=now,
             request_json=json.dumps(body),
-            quicklly_push_status="skipped",
         )
         db.add(record)
         await db.commit()
@@ -132,7 +127,19 @@ async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncS
         }
 
     # REAL CALL
-    result = amazon_client.create_fulfillment_order(body)
+    try:
+        result = amazon_client.create_fulfillment_order(body)
+    except Exception as e:
+        logger.error(f"Amazon Creation Error for {order_id}: {e}")
+        # Return a meaningful error to the user
+        raise HTTPException(
+            status_code=400, 
+            detail={
+                "error": "Amazon fulfillment order creation failed",
+                "message": str(e),
+                "order_id": order_id
+            }
+        )
 
     record = FulfillmentOrderRecord(
         seller_fulfillment_order_id=order_id,
@@ -147,7 +154,6 @@ async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncS
         last_polled_at=now,
         request_json=json.dumps(body),
         response_json=json.dumps(result) if result else None,
-        quicklly_push_status="pending",
     )
     db.add(record)
 
@@ -192,12 +198,12 @@ async def get_fulfillment_order(order_id: str, db: AsyncSession) -> dict | None:
         "seller_fulfillment_order_id": record.seller_fulfillment_order_id,
         "amazon_status": record.amazon_status,
         "internal_status": record.internal_status,
+        "shipment_status": record.shipment_status,
         "displayable_order_id": record.displayable_order_id,
         "shipping_speed_category": record.shipping_speed_category,
         "order_created_at": record.order_created_at.isoformat() if record.order_created_at else None,
         "status_changed_at": record.status_changed_at.isoformat() if record.status_changed_at else None,
         "last_polled_at": record.last_polled_at.isoformat() if record.last_polled_at else None,
-        "quicklly_push_status": record.quicklly_push_status,
         "destination_address": json.loads(record.destination_address_json) if record.destination_address_json else None,
         "items": json.loads(record.items_json) if record.items_json else None,
         "shipments": json.loads(record.shipments_json) if record.shipments_json else None,
@@ -210,7 +216,11 @@ async def cancel_fulfillment_order(order_id: str, db: AsyncSession) -> dict:
         logger.warning(f"DRY RUN: Would cancel fulfillment order {order_id}")
         return {"status": "dry_run", "message": f"DRY RUN — would cancel {order_id}"}
 
-    result = amazon_client.cancel_fulfillment_order(order_id)
+    try:
+        result = amazon_client.cancel_fulfillment_order(order_id)
+    except Exception as e:
+        logger.error(f"Amazon Cancel Error for {order_id}: {e}")
+        raise HTTPException(status_code=400, detail=f"Amazon fulfillment cancellation failed: {str(e)}")
 
     # Update DB
     stmt = select(FulfillmentOrderRecord).where(
@@ -250,11 +260,11 @@ async def list_fulfillment_orders(db: AsyncSession, status: str | None = None) -
             "seller_fulfillment_order_id": r.seller_fulfillment_order_id,
             "amazon_status": r.amazon_status,
             "internal_status": r.internal_status,
+            "shipment_status": r.shipment_status,
             "displayable_order_id": r.displayable_order_id,
             "shipping_speed_category": r.shipping_speed_category,
             "order_created_at": r.order_created_at.isoformat() if r.order_created_at else None,
             "status_changed_at": r.status_changed_at.isoformat() if r.status_changed_at else None,
-            "quicklly_push_status": r.quicklly_push_status,
         }
         for r in records
     ]
