@@ -3,9 +3,13 @@ Background jobs and task wrappers for APScheduler.
 """
 
 import logging
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.database import async_session
 
 logger = logging.getLogger(__name__)
+
+# Global scheduler instance initialized here
+scheduler = AsyncIOScheduler()
 
 async def run_inventory_sync():
     """Wrapper to run inventory sync as a scheduled job."""

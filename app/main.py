@@ -5,14 +5,13 @@ FastAPI application — entry point.
 import logging
 from contextlib import asynccontextmanager
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
 from app.config import settings
 from app.database import init_db
-from app.routers import fulfillment, inventory, orders
-from app.jobs import run_inventory_sync, run_fulfillment_poll
+from app.routers import fulfillment, inventory, orders, admin, jobs
+from app.jobs import scheduler, run_inventory_sync, run_fulfillment_poll
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -47,18 +46,19 @@ async def lifespan(app: FastAPI):
     logger.info("Database initialized")
 
     # Start scheduler
-    scheduler = AsyncIOScheduler()
     scheduler.add_job(
         run_inventory_sync,
         trigger=IntervalTrigger(hours=settings.INVENTORY_SYNC_INTERVAL_HOURS),
         id="inventory_sync",
         name=f"Inventory Sync (every {settings.INVENTORY_SYNC_INTERVAL_HOURS}h)",
+        replace_existing=True,
     )
     scheduler.add_job(
         run_fulfillment_poll,
         trigger=IntervalTrigger(minutes=settings.ORDER_POLL_INTERVAL_MINUTES),
         id="fulfillment_poll",
         name=f"Fulfillment Poll (every {settings.ORDER_POLL_INTERVAL_MINUTES}min)",
+        replace_existing=True,
     )
     scheduler.start()
     logger.info("Scheduler started")
@@ -85,6 +85,8 @@ app = FastAPI(
 app.include_router(fulfillment.router)
 app.include_router(inventory.router)
 app.include_router(orders.router)
+app.include_router(admin.router)
+app.include_router(jobs.router)
 
 
 # ---------------------------------------------------------------------------

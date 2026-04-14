@@ -8,8 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.services import fulfillment as fulfillment_service
 from app.services import order_status as order_status_service
+from app.services.auth import validate_api_key
 
-router = APIRouter(prefix="/api/v1/orders", tags=["Orders"])
+router = APIRouter(
+    prefix="/api/v1/orders", 
+    tags=["Orders"],
+    dependencies=[Depends(validate_api_key)]
+)
 
 
 @router.post("/sync")

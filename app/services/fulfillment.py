@@ -22,7 +22,7 @@ from app.constants import map_amazon_status
 
 
 async def preview_fulfillment(request: FulfillmentPreviewRequest) -> dict:
-    """Get fulfillment preview — no commitment, just validation + estimates."""
+    """Get fulfillment preview - no commitment, just validation + estimates."""
     if not request.items:
         raise HTTPException(status_code=400, detail="At least one item is required for fulfillment preview.")
 

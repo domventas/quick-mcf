@@ -7,13 +7,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.schemas import CreateFulfillmentRequest, FulfillmentPreviewRequest
 from app.services import fulfillment as fulfillment_service
+from app.services.auth import validate_api_key
 
-router = APIRouter(prefix="/api/v1/fulfillment", tags=["Fulfillment"])
+router = APIRouter(
+    prefix="/api/v1/fulfillment", 
+    tags=["Fulfillment"],
+    dependencies=[Depends(validate_api_key)]
+)
 
 
 @router.post("/preview")
 async def preview(request: FulfillmentPreviewRequest):
-    """Get fulfillment preview — validates items, address, returns shipping estimates."""
+    """Get fulfillment preview - validates items, address, returns shipping estimates."""
     result = await fulfillment_service.preview_fulfillment(request)
     return result
 

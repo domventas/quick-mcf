@@ -61,14 +61,22 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
         result = await db.execute(stmt)
         existing = result.scalar_one_or_none()
 
-        # Phase 2: Get full details for changed or new orders
-        # Skip if status hasn't changed (Note: user might want to detect shipment status changes too)
-        if existing and existing.amazon_status == amazon_status:
-            # We still might want to check if shipment_status changed even if amazon_status didn't
-            # but usually they change together. For now, let's stick to amazon_status as trigger.
-            continue
+        # Phase 2: Get full details for orders returned by Phase 1 discovery.
+        # We fetch details for EVERY order returned by list_all_fulfillment_orders
+        # because Amazon only returns orders that have had SOME update.
+        # This ensures we capture shipment/tracking updates even if the top-level
+        # amazon_status (e.g., 'Processing') remains the same.
+        
+        is_new = not existing
+        has_status_changed = existing and existing.amazon_status != amazon_status
 
-        logger.info(f"Status change detected: {order_id} — {existing.amazon_status if existing else 'NEW'} → {amazon_status}")
+        if is_new:
+            logger.info(f"New order discovered via poll: {order_id} (Status: {amazon_status})")
+        elif has_status_changed:
+            logger.info(f"Status change detected: {order_id} — {existing.amazon_status} → {amazon_status}")
+        else:
+            logger.info(f"Detail update detected (status same): {order_id} — {amazon_status}")
+
         changed_count += 1
 
         try:
@@ -90,6 +98,8 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
 
         internal_status = map_amazon_status(amazon_status)
 
+        has_shipment_changed = existing and existing.shipment_status != shipment_status
+
         if existing:
             # Update existing record
             existing.previous_status = existing.amazon_status
@@ -103,7 +113,8 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
             existing.shipments_json = json.dumps(shipments)
             existing.amazon_last_updated = now
             existing.last_polled_at = now
-            existing.status_changed_at = now
+            if has_status_changed or has_shipment_changed:
+                existing.status_changed_at = now
         else:
             # New order discovered
             record = FulfillmentOrderRecord(
@@ -125,16 +136,17 @@ async def poll_fulfillment_orders(db: AsyncSession) -> dict:
             db.add(record)
             existing = record
 
-        # Log status change
-        history = FulfillmentStatusHistory(
-            seller_fulfillment_order_id=order_id,
-            old_status=existing.previous_status if existing else None,
-            new_status=amazon_status,
-            shipment_status=shipment_status,
-            changed_at=now,
-            full_response_json=json.dumps(detail),
-        )
-        db.add(history)
+        # Log to history only if a major change occurred
+        if is_new or has_status_changed or has_shipment_changed:
+            history = FulfillmentStatusHistory(
+                seller_fulfillment_order_id=order_id,
+                old_status=existing.previous_status if not is_new else None,
+                new_status=amazon_status,
+                shipment_status=shipment_status,
+                changed_at=now,
+                full_response_json=json.dumps(detail),
+            )
+            db.add(history)
 
     # Update checkpoint
     if sync_state:

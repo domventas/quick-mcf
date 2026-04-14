@@ -28,7 +28,10 @@ class Settings(BaseSettings):
 
     # --- Sync Settings ---
     INVENTORY_SYNC_INTERVAL_HOURS: float = 3
-    ORDER_POLL_INTERVAL_MINUTES: int = 10  # 5-15 min range
+    ORDER_POLL_INTERVAL_MINUTES: int = 10  
+
+    # --- Authentication ---
+    MASTER_API_KEY: str = "dev_master_key"  # Should be changed in production
 
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

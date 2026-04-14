@@ -136,3 +136,23 @@ class JobStatusResponse(BaseModel):
     last_run: datetime | None = None
     next_run: datetime | None = None
     status: str = "scheduled"
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+class APIKeyCreate(BaseModel):
+    client_name: str
+    key: str | None = None  # If None, the system should generate one
+
+class APIKeyResponse(BaseModel):
+    id: int
+    key: str
+    client_name: str
+    is_active: bool
+    created_at: datetime
+    last_used_at: datetime | None = None
+
+    class Config:
+        from_attributes = True

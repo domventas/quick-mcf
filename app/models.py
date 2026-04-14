@@ -112,3 +112,19 @@ class SyncState(Base):
     last_report_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     last_snapshot_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Authentication
+# ---------------------------------------------------------------------------
+
+class APIKey(Base):
+    """API Keys for clients and system jobs."""
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    client_name: Mapped[str] = mapped_column(String(128))
+    is_active: Mapped[bool] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
