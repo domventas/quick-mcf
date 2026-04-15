@@ -98,7 +98,7 @@ app.include_router(jobs.router)
 # Health / Info
 # ---------------------------------------------------------------------------
 
-@app.get("/health", tags=["Health"])
+@app.get("/health", tags=["Health"], include_in_schema=False)
 async def health():
     return {
         "status": "ok",

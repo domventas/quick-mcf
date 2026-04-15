@@ -21,46 +21,7 @@ logger = logging.getLogger(__name__)
 from app.constants import map_amazon_status
 
 
-async def preview_fulfillment(request: FulfillmentPreviewRequest) -> dict:
-    """Get fulfillment preview - no commitment, just validation + estimates."""
-    if not request.items:
-        raise HTTPException(status_code=400, detail="At least one item is required for fulfillment preview.")
-
-    marketplace = request.marketplace_id or settings.SP_API_MARKETPLACE_ID
-
-    body = {
-        "marketplaceId": marketplace,
-        "address": {
-            "name": request.address.name,
-            "line1": request.address.line1,
-            "line2": request.address.line2,
-            "line3": request.address.line3,
-            "city": request.address.city,
-            "stateOrRegion": request.address.state_or_region,
-            "postalCode": request.address.postal_code,
-            "countryCode": request.address.country_code,
-            "phone": request.address.phone,
-        },
-        "items": [
-            {
-                "sellerSku": item.seller_sku,
-                "quantity": item.quantity,
-                "sellerFulfillmentOrderItemId": item.seller_fulfillment_order_item_id or f"item-{i}",
-            }
-            for i, item in enumerate(request.items)
-        ],
-        "shippingSpeedCategories": request.shipping_speed_categories,
-    }
-
-    try:
-        result = amazon_client.get_fulfillment_preview(body)
-        return result
-    except Exception as e:
-        logger.error(f"Amazon Preview Error: {e}")
-        raise HTTPException(status_code=400, detail=f"Amazon fulfillment preview failed: {str(e)}")
-
-
-async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncSession, current_client: str) -> dict:
+async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncSession) -> dict:
     """Create an MCF fulfillment order."""
     if not request.items:
         raise HTTPException(status_code=400, detail="At least one item is required to create a fulfillment order.")
@@ -110,13 +71,12 @@ async def create_fulfillment_order(request: CreateFulfillmentRequest, db: AsyncS
             order_created_at=now,
             last_polled_at=now,
             request_json=json.dumps(body),
-            created_by_client=current_client,
             **kwargs
         )
 
     # DRY RUN — log but don't send to Amazon
     if settings.DRY_RUN:
-        logger.warning(f"DRY RUN: Would create fulfillment order {order_id} by {current_client}")
+        logger.warning(f"DRY RUN: Would create fulfillment order {order_id}")
         record = _make_record(amazon_status="DryRun", internal_status="dry_run")
         db.add(record)
         await db.commit()

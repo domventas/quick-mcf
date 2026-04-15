@@ -36,7 +36,7 @@ async def list_orders(
     return await fulfillment_service.list_fulfillment_orders(db, status=status)
 
 
-@router.get("/{order_id}")
+@router.get("/{order_id}", include_in_schema=False)
 async def get_order(
     order_id: str, 
     db: AsyncSession = Depends(get_db),
@@ -49,7 +49,7 @@ async def get_order(
     return result
 
 
-@router.get("/{order_id}/history")
+@router.get("/{order_id}/history", include_in_schema=False)
 async def get_order_history(
     order_id: str, 
     db: AsyncSession = Depends(get_db),

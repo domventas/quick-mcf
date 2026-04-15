@@ -45,7 +45,7 @@ Sync your FBA inventory levels to a local database.
 
 ### 3. Order Status Polling
 Tracks the lifecycle of your MCF orders.
-*   **Automatic**: Runs every 10 minutes (configurable via `ORDER_POLL_INTERVAL_MINUTES`).
+*   **Automatic**: Runs every 60 minutes (configurable via `ORDER_POLL_INTERVAL_MINUTES`).
 *   **Manual Trigger**: `POST /api/v1/orders/sync`
 *   **Auto-discovery**: Automatically discovers and tracks any fulfillment order processed by Amazon (e.g., from Seller Central) that isn't yet in the local DB.
 *   **Features**: Safely captures all updates, including `fulfillmentShipmentStatus`, meaning tracking numbers and shipping statuses are reliably recorded in the local history.

@@ -58,7 +58,6 @@ class FulfillmentOrderRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     seller_fulfillment_order_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     marketplace_id: Mapped[str] = mapped_column(String(20), default="")
-    created_by_client: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
 
     # Status
     amazon_status: Mapped[str] = mapped_column(String(32), default="")

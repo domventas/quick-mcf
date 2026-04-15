@@ -9,7 +9,7 @@ from app.jobs import scheduler
 
 router = APIRouter(prefix="/api/v1/jobs", tags=["Jobs"], dependencies=[Depends(validate_api_key)])
 
-@router.get("", response_model=list[JobStatusResponse])
+@router.get("", response_model=list[JobStatusResponse], include_in_schema=False)
 async def get_jobs_status():
     """
     Get status of background jobs directly from the scheduler instance.

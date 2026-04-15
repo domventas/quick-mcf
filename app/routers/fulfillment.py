@@ -15,13 +15,6 @@ router = APIRouter(
 )
 
 
-@router.post("/preview")
-async def preview(request: FulfillmentPreviewRequest, api_key: APIKey = Depends(validate_api_key)):
-    """Get fulfillment preview - validates items, address, returns shipping estimates."""
-    result = await fulfillment_service.preview_fulfillment(request)
-    return result
-
-
 @router.post("/orders")
 async def create_order(
     request: CreateFulfillmentRequest, 
@@ -29,7 +22,7 @@ async def create_order(
     api_key: APIKey = Depends(validate_api_key)
 ):
     """Create MCF fulfillment order. Respects DRY_RUN setting."""
-    result = await fulfillment_service.create_fulfillment_order(request, db, current_client=api_key.client_name)
+    result = await fulfillment_service.create_fulfillment_order(request, db)
     return result
 
 
@@ -43,7 +36,7 @@ async def list_orders(
     return await fulfillment_service.list_fulfillment_orders(db, status=status)
 
 
-@router.get("/orders/{order_id}")
+@router.get("/orders/{order_id}", include_in_schema=False)
 async def get_order(
     order_id: str, 
     db: AsyncSession = Depends(get_db),
@@ -56,7 +49,7 @@ async def get_order(
     return result
 
 
-@router.delete("/orders/{order_id}")
+@router.delete("/orders/{order_id}", include_in_schema=False)
 async def cancel_order(
     order_id: str, 
     db: AsyncSession = Depends(get_db),
